@@ -1,8 +1,37 @@
-# vinext-starter
+# Lily Mojibake Studio
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A browser-based **mojibake (文字化け / garbled-text) subtitle video editor**, inspired
+by the open, borderless web space around Shunji Iwai's film
+*All About Lily Chou-Chou* (莉莉周).
+
+Drop in a clip, place timed text events on a timeline, and render authentic
+Shift_JIS→MacRoman corruption bursts over the video — then export to MP4/WebM,
+entirely client-side.
+
+## Features
+
+- **Source video** — upload MP4/MOV/WEBM, or work on a plain black/white colour
+  card when no clip is loaded
+- **Text events** — add subtitles with independent start times and durations,
+  arranged on a draggable/resizable timeline
+- **Mojibake engine** — text is converted once to Shift_JIS and decoded as
+  MacRoman to produce a fixed, byte-exact garbled string, then revealed as a
+  growing prefix on the reference film's measured typing rhythm (see
+  `app/mojibake.ts`); optional Apple-logo () byte injection
+- **Transition modes** — black card, white flash, or none
+- **Trim** — set in/out points on the video clip
+- **Export** — records the canvas + audio via `MediaRecorder`, preferring MP4
+  (`avc1`) and falling back to WebM
+
+## Tech stack
+
+- [vinext](https://github.com/cloudflare/vinext) (React 19 / RSC on Cloudflare
+  Workers) + [Vite](https://vite.dev)
+- TypeScript, Tailwind CSS
+- Cloudflare Workers runtime (`worker/index.ts`) for asset serving and image
+  optimization
+- Optional Cloudflare D1 + Drizzle scaffold (currently unused; `db/schema.ts` is
+  intentionally empty)
 
 ## Prerequisites
 
@@ -12,62 +41,42 @@ Drizzle support.
 
 ```bash
 npm install
-npm run dev
-npm run build
+npm run dev      # start local dev server
+npm run build    # production build
+npm test         # build + verify the rendered editor shell
 ```
 
-This starter does not use `wrangler.jsonc`.
+This project does not use `wrangler.jsonc`. Cloudflare D1/R2 binding names are
+declared inline in `vite.config.ts` and simulated for local development.
 
-## Included Shape
+## Project structure
 
-- edit site code under `app/`
-- `vite.config.ts` declares Cloudflare D1/R2 binding names and simulates them for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```
+app/
+  page.tsx      # the editor: preview stage, timeline, inspector, export
+  mojibake.ts   # Shift_JIS→MacRoman corruption engine + reference timing
+  layout.tsx    # document shell
+  globals.css   # editor styling
+worker/         # Cloudflare Worker entry (assets + image optimization)
+db/             # Drizzle/D1 scaffold (unused)
+examples/d1/    # optional D1 example surface
+public/assets/  # reference imagery (heritage masthead, field, site reference)
+tests/          # server-render smoke test
 ```
 
 ## Useful Commands
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run dev` — start local development
+- `npm run build` — production build via vinext
+- `npm test` — build, then verify the server-rendered editor shell
+- `npm run db:generate` — generate Drizzle migrations after schema changes
+
+## Deployment
+
+The app builds to a standard Cloudflare Workers bundle and can be deployed with
+Wrangler. (Prior OpenAI Sites hosting coupling has been removed.)
 
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
-# Lily Mojibake Studio
