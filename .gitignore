@@ -1,0 +1,92 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.vinext/
+/out/
+
+# vite cache
+/.vite/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+/.npm-cache/
+
+# local source-analysis material
+/media-analysis/
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+/dist/
+/.wrangler/
+/outputs/
+/work/
+# OpenAI / Codex local files
+.openai/
+.codex/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+
+# dependencies
+node_modules/
+
+# build
+.next/
+dist/
+.vite/
+.wrangler/
+
+# environment
+.env
+.env.*
+
+# OpenAI / Codex
+.openai/
+.codex/
+
+# Next build
+.next/
+.vinext/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Vite
+.vite/
+
+# Cloudflare
+.wrangler/
+
+# TypeScript build cache
+*.tsbuildinfo
