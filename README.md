@@ -2,7 +2,7 @@
 
 A browser-based **mojibake (文字化け / garbled-text) subtitle video editor**, inspired
 by the open, borderless web space around Shunji Iwai's film
-*All About Lily Chou-Chou* (莉莉周).
+*All About Lily Chou-Chou* (リリイ・シュシュのすべて).
 
 Drop in a clip, place timed text events on a timeline, and render authentic
 Shift_JIS→MacRoman corruption bursts over the video — then export to MP4/WebM,
