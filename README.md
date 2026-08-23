@@ -73,20 +73,3 @@ worker/
 
 tests/
 └── Server-render and functionality smoke tests
-
-## Useful Commands
-
-- `npm run dev` — start local development
-- `npm run build` — production build via vinext
-- `npm test` — build, then verify the server-rendered editor shell
-- `npm run db:generate` — generate Drizzle migrations after schema changes
-
-## Deployment
-
-The app builds to a standard Cloudflare Workers bundle and can be deployed with
-Wrangler. (Prior OpenAI Sites hosting coupling has been removed.)
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
