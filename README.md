@@ -49,20 +49,30 @@ npm test         # build + verify the rendered editor shell
 This project does not use `wrangler.jsonc`. Cloudflare D1/R2 binding names are
 declared inline in `vite.config.ts` and simulated for local development.
 
-## Project structure
+## Project Structure
 
-```
+```text
 app/
-  page.tsx      # the editor: preview stage, timeline, inspector, export
-  mojibake.ts   # Shift_JIS→MacRoman corruption engine + reference timing
-  layout.tsx    # document shell
-  globals.css   # editor styling
-worker/         # Cloudflare Worker entry (assets + image optimization)
-db/             # Drizzle/D1 scaffold (unused)
-examples/d1/    # optional D1 example surface
-public/assets/  # reference imagery (heritage masthead, field, site reference)
-tests/          # server-render smoke test
-```
+├── page.tsx          # Main editor interface: video preview, timeline, inspector, and export workflow
+├── mojibake.ts       # Lily Chou-Chou style mojibake engine: Shift_JIS → MacRoman corruption logic
+├── layout.tsx        # Application document shell
+└── globals.css       # Global UI styling
+
+video/
+├── format handling   # Video validation and browser compatibility processing
+└── FFmpeg pipeline   # Client-side transcoding support
+
+scripts/
+└── setup scripts     # Build-time utilities and asset preparation
+
+public/
+└── assets/           # Reference images and visual materials
+
+worker/
+└── Cloudflare Worker entry for deployment assets and optimization
+
+tests/
+└── Server-render and functionality smoke tests
 
 ## Useful Commands
 
@@ -70,3 +80,13 @@ tests/          # server-render smoke test
 - `npm run build` — production build via vinext
 - `npm test` — build, then verify the server-rendered editor shell
 - `npm run db:generate` — generate Drizzle migrations after schema changes
+
+## Deployment
+
+The app builds to a standard Cloudflare Workers bundle and can be deployed with
+Wrangler. (Prior OpenAI Sites hosting coupling has been removed.)
+
+## Learn More
+
+- [vinext Documentation](https://github.com/cloudflare/vinext)
+- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
