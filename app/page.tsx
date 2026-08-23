@@ -3,6 +3,16 @@
 import type { CSSProperties, ChangeEvent, DragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBurst, stepAt, type MojibakeBurst } from "./mojibake";
+import { prepareVideo, VideoInputError, type PrepareStage } from "@/video";
+
+const STAGE_TEXT: Record<PrepareStage, string> = {
+  validating: "校验文件…",
+  probing: "检测浏览器兼容性…",
+  inspecting: "解析容器 / 编码…",
+  remuxing: "重封装容器(不重编码)…",
+  transcoding: "硬件转码为 MP4…",
+  ffmpeg: "FFmpeg 转码为 MP4…",
+};
 
 type TransitionMode = "black" | "flash" | "none";
 type TextEvent = { id: number; start: number; duration: number; text: string; seed: number; speed: number; apple: boolean };
@@ -35,6 +45,7 @@ export default function Home() {
   const videoTapRef = useRef<MediaElementAudioSourceNode | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const cancelExportRef = useRef(false);
+  const prepareAbortRef = useRef<AbortController | null>(null);
   const nextTextId = useRef(2);
   const [videoUrl, setVideoUrl] = useState("");
   const [fileName, setFileName] = useState("");
@@ -54,6 +65,8 @@ export default function Home() {
   const [renderProgress, setRenderProgress] = useState(0);
   const [notice, setNotice] = useState("SELECT SOURCE 上传视频后即可开始剪辑");
   const [canMp4, setCanMp4] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareProgress, setPrepareProgress] = useState(0);
 
   const segmentDuration = Math.max(.1, trimEnd - trimStart);
   const totalDuration = segmentDuration;
@@ -201,6 +214,7 @@ export default function Home() {
   useEffect(() => { const timer = setTimeout(() => setCanMp4(typeof MediaRecorder !== "undefined" && ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4"].some((type) => MediaRecorder.isTypeSupported(type))), 0); return () => clearTimeout(timer); }, []);
 
   useEffect(() => () => { if (videoUrl.startsWith("blob:")) URL.revokeObjectURL(videoUrl); }, [videoUrl]);
+  useEffect(() => () => prepareAbortRef.current?.abort(), []);
 
   /* Measure the real stage height so the preview subtitle is fontScale% of it —
      the same fraction the 720px export canvas uses. Container-query units proved
@@ -213,15 +227,41 @@ export default function Home() {
     return () => observer.disconnect();
   }, []);
 
-  const loadFile = useCallback((file?: File) => {
+  /* Upload → validate → native probe → Mediabunny remux/WebCodecs → FFmpeg,
+     stopping at the first stage that yields a browser-playable source. The heavy
+     stages live in @/video and are lazy-loaded, so the editor never pulls them
+     in on entry. */
+  const loadFile = useCallback(async (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("video/")) { setNotice("请选择 MP4、MOV 或 WEBM 视频文件"); return; }
-    setVideoUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return URL.createObjectURL(file); });
-    setFileName(file.name); setCurrentTime(0); setTrimStart(0); setIsPlaying(false);
-    setNotice("背景视频已载入・可在播放头处插入多个字幕片段");
+    prepareAbortRef.current?.abort();
+    const controller = new AbortController();
+    prepareAbortRef.current = controller;
+    setPreparing(true); setPrepareProgress(0); setIsPlaying(false);
+    let stage: PrepareStage = "validating";
+    try {
+      const result = await prepareVideo(file, {
+        signal: controller.signal,
+        onStage: (next) => { stage = next; setPrepareProgress(0); setNotice(STAGE_TEXT[next]); },
+        onProgress: (ratio) => { setPrepareProgress(ratio); setNotice(`${STAGE_TEXT[stage]} ${Math.round(ratio * 100)}%`); },
+      });
+      if (controller.signal.aborted) { result.cleanup(); return; }
+      setVideoUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return result.url; });
+      setFileName(file.name); setCurrentTime(0); setTrimStart(0);
+      setNotice(result.transformed
+        ? `已转码为可编辑格式(${result.source})・可在播放头处插入字幕`
+        : "背景视频已载入・可在播放头处插入多个字幕片段");
+    } catch (error) {
+      if (error instanceof VideoInputError && error.code === "aborted") { setNotice("已取消视频处理"); return; }
+      setNotice(error instanceof VideoInputError ? `无法载入:${error.message}` : "视频处理失败,请换个文件再试");
+    } finally {
+      if (prepareAbortRef.current === controller) { prepareAbortRef.current = null; setPreparing(false); setPrepareProgress(0); }
+      /* Clear the picker so re-selecting the same file (after a cancel) re-fires. */
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }, []);
 
   const removeVideo = () => {
+    prepareAbortRef.current?.abort();
     setVideoUrl((previous) => { if (previous.startsWith("blob:")) URL.revokeObjectURL(previous); return ""; });
     setFileName(""); setVideoSize("— × —"); setCurrentTime(0); setTrimStart(0); setIsPlaying(false);
     /* Drop the audio tap so a re-uploaded clip gets a fresh MediaElementSource. */
@@ -396,12 +436,13 @@ export default function Home() {
     <section className="workspace" id="editor">
       <div className="stage-column">
         <div className="section-heading"><span>PREVIEW</span><span>{fileName || "UNTITLED_PROJECT"}</span></div>
-        <div ref={stageRef} className={stageClass} onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setIsDragging(false)} onDrop={(event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); loadFile(event.dataTransfer.files?.[0]); }}>
+        <div ref={stageRef} className={stageClass} onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setIsDragging(false)} onDrop={(event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setIsDragging(false); void loadFile(event.dataTransfer.files?.[0]); }}>
           {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onLoadedMetadata={onLoadedMetadata} onTimeUpdate={(event) => { const time = event.currentTarget.currentTime; if (time >= trimEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = trimStart; setCurrentTime(trimStart); } else setCurrentTime(time); }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)}><track kind="captions" src="/empty.vtt" srcLang="zh" label="无字幕" default /></video> : mode === "none" ? <div className="empty-film"><span>NO SIGNAL · 上传视频</span><i /></div> : <div className={`default-bg ${mode === "flash" ? "is-white" : ""}`} aria-hidden="true" />}
           {activeText && <div className="subtitle-layer" style={{ "--subtitle-size": stageHeight ? `${(stageHeight * fontScale) / 100}px` : `${fontScale}cqh` } as CSSProperties}><div className="main-title" data-garbled={activeStep?.garbled ? "1" : "0"}>{garbledText}</div></div>}
-          <button className="upload-callout" onClick={() => fileInputRef.current?.click()}><span className="upload-plus">＋</span><span>{fileName ? "REPLACE SOURCE" : "SELECT SOURCE"}</span><small>点击或拖入 MP4 / MOV / WEBM</small></button>
-          {videoUrl && <button className="remove-source" onClick={removeVideo} title="移除背景视频">✕ 移除视频</button>}
-          <input ref={fileInputRef} className="visually-hidden" type="file" accept="video/*" onChange={(event: ChangeEvent<HTMLInputElement>) => loadFile(event.target.files?.[0])} />
+          <button className="upload-callout" disabled={preparing} onClick={() => fileInputRef.current?.click()}><span className="upload-plus">＋</span><span>{fileName ? "REPLACE SOURCE" : "SELECT SOURCE"}</span><small>点击或拖入视频・支持更多格式,必要时自动转码</small></button>
+          {videoUrl && !preparing && <button className="remove-source" onClick={removeVideo} title="移除背景视频">✕ 移除视频</button>}
+          <input ref={fileInputRef} className="visually-hidden" type="file" accept="video/*,.mkv,.avi,.flv,.ts,.m2ts,.mts,.wmv,.mov,.webm,.mp4,.m4v,.ogv,.3gp" onChange={(event: ChangeEvent<HTMLInputElement>) => { void loadFile(event.target.files?.[0]); }} />
+          {preparing && <div className="convert-overlay" role="status" aria-live="polite"><span className="convert-stage">{notice}</span><div className="convert-bar"><i style={{ width: `${Math.round(prepareProgress * 100)}%` }} /></div><button className="convert-cancel" onClick={() => prepareAbortRef.current?.abort()}>CANCEL CONVERSION ✕</button></div>}
           <div className="stage-meta">{`${videoUrl ? videoSize : "16:9"} / ${formatTime(currentTime)}`}</div>{isDragging && <div className="drop-mask">释放以载入视频</div>}
         </div>
         <div className="transport"><button onClick={() => seek(trimStart)}>|◀</button><button className="play" onClick={togglePlayback}>{isPlaying ? "Ⅱ" : "▶"}</button><div className="timecode">{formatTime(currentTime)} <span>/ {formatTime(trimEnd)}</span></div><input className="seekbar" aria-label="播放位置" type="range" min={trimStart} max={trimEnd} step=".01" value={Math.min(trimEnd, Math.max(trimStart, currentTime))} onChange={(event) => seek(Number(event.target.value))} /><button onClick={() => seek(currentTime - 1)}>−1s</button><button onClick={() => seek(currentTime + 1)}>+1s</button></div>
@@ -419,7 +460,7 @@ export default function Home() {
         <label className="check-line audio-toggle"><input type="checkbox" disabled={!selectedText} checked={selectedText?.apple ?? false} onChange={(event) => updateText({ apple: event.target.checked })} /> APPLE MOJIBAKE <span>{selectedText?.apple ? "苹果乱码 · 随机一个  字节" : "STRICT · 仅真实 0xF0"}</span></label>
         <Control label="乱码速度" value={selectedText?.speed ?? 1} suffix="×" min={.25} max={5} step={.05} disabled={!selectedText} onChange={(value) => updateText({ speed: value })} /><Control label="字幕字号" value={fontScale} suffix=" %H" min={1.5} max={16} step={.05} onChange={setFontScale} />
         <div className="field-label">乱码期间画面</div><div className="transition-grid">{([['black','01','切黑场'],['flash','02','切白场'],['none','03','不遮挡']] as const).map(([value, number, label]) => <button key={value} className={mode === value ? "active" : ""} onClick={() => selectMode(value)}><b>{number}</b> {label}</button>)}</div>
-        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={!isRecording && !videoUrl && mode === "none"} onClick={isRecording ? cancelExport : exportVideo}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : `EXPORT ${canMp4 ? "MP4" : "WEBM"}`}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button></div><div className="notice" aria-live="polite">&gt; {notice}</div>
+        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={preparing || (!isRecording && !videoUrl && mode === "none")} onClick={isRecording ? cancelExport : exportVideo}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : `EXPORT ${canMp4 ? "MP4" : "WEBM"}`}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button></div><div className="notice" aria-live="polite">&gt; {notice}</div>
       </aside>
     </section>
     <footer><span>ETHER / 2026</span></footer>

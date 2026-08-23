@@ -90,3 +90,6 @@ dist/
 
 # TypeScript build cache
 *.tsbuildinfo
+
+# Self-hosted FFmpeg.wasm core (regenerated from node_modules by postinstall)
+/public/ffmpeg/
