@@ -36,6 +36,12 @@ button { color:inherit; }
 .remove-source:hover { background:rgba(186,255,69,.12); border-color:var(--acid); }
 .stage-meta { position:absolute; bottom:11px; right:13px; color:#718071; font-size:8px; z-index:5; }
 .drop-mask { position:absolute; inset:0; display:grid; place-content:center; background:rgba(8,10,8,.88); color:var(--acid); z-index:8; font-size:13px; letter-spacing:.15em; }
+.convert-overlay { position:absolute; inset:0; z-index:9; display:grid; place-content:center; justify-items:center; gap:14px; padding:0 24px; background:rgba(6,8,6,.9); text-align:center; }
+.convert-stage { color:var(--acid); font-size:10px; letter-spacing:.08em; max-width:80%; }
+.convert-bar { width:min(70%,240px); height:3px; background:#263126; overflow:hidden; }
+.convert-bar i { display:block; height:100%; background:var(--acid); box-shadow:0 0 8px var(--acid); transition:width .15s; }
+.convert-cancel { padding:9px 16px; background:transparent; border:1px solid var(--acid); color:var(--acid); font-size:9px; letter-spacing:.1em; cursor:pointer; }
+.convert-cancel:hover { background:rgba(186,255,69,.12); }
 .visually-hidden { position:absolute; width:1px; height:1px; clip:rect(0 0 0 0); overflow:hidden; }
 .transport { height:48px; display:flex; align-items:center; gap:9px; border:1px solid var(--line); border-top:0; padding:0 12px; background:#0d100d; }
 .transport button { border:0; background:none; color:var(--muted); font-size:9px; cursor:pointer; }
