@@ -177,6 +177,14 @@ export interface BurstOptions {
 }
 
 /**
+ * MacRoman-style glyphs used to vary the opening 《 → "Å" corruption. Kept to
+ * accented-Latin / typographic marks so the swap still reads as mojibake rather
+ * than a generic glitch. "Å" itself is intentionally absent so the pick always
+ * differs from the original.
+ */
+const MACROMAN_OPENERS = ["Ç", "É", "Ñ", "Ö", "Ü", "à", "ä", "é", "î", "ñ", "ö", "†", "§", "•"];
+
+/**
  * Builds the state list for one line. States are strict prefixes of a single
  * fixed mojibake string, so a state is bit-identical for its whole hold —
  * nothing flickers, nothing re-randomises per frame.
@@ -188,7 +196,18 @@ export const createBurst = (text: string, options: BurstOptions = {}): MojibakeB
   const { seed = 1, scale = 1, source, apple = false } = options;
   const clean = text || "\u3000";
   const bytes = injectAppleBytes(toShiftJis(toFullwidth(source ?? clean)), seed, apple);
-  const mojibake = decodeMacRoman(bytes);
+  let mojibake = decodeMacRoman(bytes);
+  /* Opening flourish: the reference line 《…》 always decodes to a leading "Å".
+     Swap that single glyph for another MacRoman-style opener so successive
+     re-rolls don't all begin identically. A seed-derived stream (independent of
+     the cadence RNG below) keeps the pick stable within one generation and only
+     changes when the seed does — i.e. on "重新乱码". Replace-only: the string
+     length, reveal count and animation rhythm are all untouched. */
+  if ((source ?? clean)[0] === "《" && mojibake[0] === "Å") {
+    const openerRandom = mulberry32(seed ^ 0x85ebca6b);
+    const opener = MACROMAN_OPENERS[Math.floor(openerRandom() * MACROMAN_OPENERS.length)] as string;
+    mojibake = opener + mojibake.slice(1);
+  }
   /* The reference never completes the line — it hard-cuts to clean Japanese at
      roughly two thirds — so we reveal a growing prefix up to that point. */
   const revealLength = Math.max(1, Math.round(bytes.length * 0.667));
