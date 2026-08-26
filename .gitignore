@@ -66,9 +66,7 @@ dist/
 
 # environment
 .env
-.env.*
-
-# OpenAI / Codex
+.env.*# OpenAI / Codex
 .openai/
 .codex/
 
@@ -86,10 +84,4 @@ dist/
 .vite/
 
 # Cloudflare
-.wrangler/
-
-# TypeScript build cache
-*.tsbuildinfo
-
-# Self-hosted FFmpeg.wasm core (regenerated from node_modules by postinstall)
-/public/ffmpeg/
+.wrangler/git add .

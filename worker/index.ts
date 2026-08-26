@@ -4,7 +4,7 @@ import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;
-  DB: D1Database;
+  FFMPEG_ASSETS: R2Bucket;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -28,6 +28,25 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith("/ffmpeg/")) {
+      const key = url.pathname.slice(1);
+      const object = await env.FFMPEG_ASSETS.get(key);
+      if (!object) {
+        return new Response("Not found", { status: 404 });
+      }
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      headers.set("ETag", object.httpEtag);
+      if (url.pathname.endsWith(".wasm")) {
+        headers.set("Content-Type", "application/wasm");
+      }
+      if (url.pathname.endsWith(".js")) {
+        headers.set("Content-Type", "application/javascript");
+      }
+      return new Response(object.body, { headers });
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
