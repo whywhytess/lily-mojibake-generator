@@ -46,8 +46,10 @@ npm run build    # production build
 npm test         # build + verify the rendered editor shell
 ```
 
-This project does not use `wrangler.jsonc`. Cloudflare D1/R2 binding names are
-declared inline in `vite.config.ts` and simulated for local development.
+Cloudflare bindings are declared in `wrangler.jsonc` (read by both `vite.config.ts`
+for local dev and `wrangler deploy`). The FFmpeg core (`ffmpeg-core.js` / `.wasm`)
+is served from the `assets` R2 bucket via the `/ffmpeg/*` route in
+`worker/index.ts`.
 
 ## Project Structure
 
