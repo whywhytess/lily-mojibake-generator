@@ -18,6 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
+    icons: { icon: "/apple-icon.png", shortcut: "/apple-icon.png", apple: "/apple-icon.png" },
     openGraph: { title, description, type: "website", images: [{ url: image, width: 1670, height: 938, alt: "ETHER 乱码影像字幕生成器" }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
