@@ -18,6 +18,7 @@
     "@ffmpeg/util": "^0.12.2",
     "drizzle-orm": "0.45.2",
     "encoding-japanese": "^2.2.0",
+    "gifenc": "^1.0.3",
     "mediabunny": "^1.55.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"

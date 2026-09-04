@@ -71,6 +71,9 @@ textarea:focus { border-color:var(--acid-dim); }
 .render-button:disabled { cursor:not-allowed; background:#2c3528; color:#778071; }
 .render-button i { position:absolute; left:0; bottom:0; height:3px; background:#fff; transition:width .15s; }
 .notice { min-height:30px; color:#78964b; font-size:8px; line-height:1.5; margin-top:9px; }
+.upsell { margin:8px 0 0; font-size:8px; line-height:1.6; letter-spacing:.04em; color:#5c6a4f; }
+.upsell a { color:var(--acid); text-decoration:none; border-bottom:1px solid var(--acid-dim); }
+.upsell a:hover { color:#d4ff7a; }
 .timeline-panel { max-width:1540px; margin:25px auto 0; border-top:1px solid var(--line); padding-top:17px; }
 .timeline-ruler { display:flex; justify-content:space-between; color:#4d584d; font-size:7px; padding:0 4px 5px 88px; }
 .timeline-track { height:62px; margin-left:80px; border-left:1px solid var(--line); position:relative; background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),#1c241c calc(25% - 1px) 25%); }

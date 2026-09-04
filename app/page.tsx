@@ -4,14 +4,23 @@ import type { CSSProperties, ChangeEvent, DragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBurst, stepAt, type MojibakeBurst } from "./mojibake";
 import { prepareVideo, VideoInputError, type PrepareStage } from "@/video";
+import { GIFEncoder, quantize, applyPalette } from "gifenc";
+
+// Free trial export: a short, silent GIF. The full version (original audio,
+// full length, video export) lives at the paid site.
+const FULL_VERSION_URL = "lily.whywhyte55.com";
+const GIF_MAX_SECONDS = 5;
+const GIF_FPS = 12;
+const GIF_WIDTH = 480;
+const GIF_HEIGHT = 270;
 
 const STAGE_TEXT: Record<PrepareStage, string> = {
   validating: "校验文件…",
   probing: "检测浏览器兼容性…",
   inspecting: "解析容器 / 编码…",
   remuxing: "重封装容器(不重编码)…",
-  transcoding: "硬件转码为 MP4…",
-  ffmpeg: "FFmpeg 转码为 MP4…",
+  transcoding: "硬件转码中…",
+  ffmpeg: "FFmpeg 转码中…",
 };
 
 type TransitionMode = "black" | "flash" | "none";
@@ -38,11 +47,19 @@ const drawCover = (ctx: CanvasRenderingContext2D, video: HTMLVideoElement, width
 
 const nextPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+/* Seek a paused <video> to a time and resolve once the frame is ready. A short
+   timeout guards against a stalled seek trapping the export loop. */
+const seekVideo = (video: HTMLVideoElement, time: number) => new Promise<void>((resolve) => {
+  let done = false;
+  const finish = () => { if (done) return; done = true; video.removeEventListener("seeked", finish); resolve(); };
+  video.addEventListener("seeked", finish, { once: true });
+  video.currentTime = time;
+  window.setTimeout(finish, 200);
+});
+
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const videoTapRef = useRef<MediaElementAudioSourceNode | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const cancelExportRef = useRef(false);
   const prepareAbortRef = useRef<AbortController | null>(null);
@@ -64,12 +81,10 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [notice, setNotice] = useState("SELECT SOURCE 上传视频后即可开始剪辑");
-  const [canMp4, setCanMp4] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [prepareProgress, setPrepareProgress] = useState(0);
 
   const segmentDuration = Math.max(.1, trimEnd - trimStart);
-  const totalDuration = segmentDuration;
   const selectedText = textEvents.find((event) => event.id === selectedTextId) ?? textEvents[0];
   const activeText = textEvents.find((event) => currentTime >= event.start && currentTime < event.start + event.duration);
   /* With no source video the preview runs on a plain colour card whose length
@@ -208,11 +223,6 @@ export default function Home() {
     return () => cancelAnimationFrame(animation);
   }, [videoUrl, isPlaying, trimStart, trimEnd]);
 
-  useEffect(() => () => { void audioCtxRef.current?.close(); }, []);
-  /* Prefer H.264/AAC MP4 when the browser can record it — the only format iOS /
-     Android galleries accept for "save to album". Fall back to WEBM otherwise. */
-  useEffect(() => { const timer = setTimeout(() => setCanMp4(typeof MediaRecorder !== "undefined" && ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4"].some((type) => MediaRecorder.isTypeSupported(type))), 0); return () => clearTimeout(timer); }, []);
-
   useEffect(() => () => { if (videoUrl.startsWith("blob:")) URL.revokeObjectURL(videoUrl); }, [videoUrl]);
   useEffect(() => () => prepareAbortRef.current?.abort(), []);
 
@@ -264,8 +274,6 @@ export default function Home() {
     prepareAbortRef.current?.abort();
     setVideoUrl((previous) => { if (previous.startsWith("blob:")) URL.revokeObjectURL(previous); return ""; });
     setFileName(""); setVideoSize("— × —"); setCurrentTime(0); setTrimStart(0); setIsPlaying(false);
-    /* Drop the audio tap so a re-uploaded clip gets a fresh MediaElementSource. */
-    videoTapRef.current?.disconnect(); videoTapRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = "";
     setNotice("已移除背景视频 · 预览回到默认色卡");
   };
@@ -330,91 +338,75 @@ export default function Home() {
      race below guarantees it runs even if onstop never fires). */
   const cancelExport = () => { if (!isRecording) return; cancelExportRef.current = true; setNotice("正在取消导出…"); };
 
-  const exportVideo = async () => {
+  /* Free trial export: render the trimmed clip (capped at GIF_MAX_SECONDS) to a
+     small, SILENT GIF — the only format a web page can hand a phone that saves
+     straight to the album. The full-length, original-audio video export is the
+     paid feature at FULL_VERSION_URL. */
+  const exportGif = async () => {
     const video = videoRef.current;
     const hasVideo = Boolean(video && videoUrl);
     if (isRecording) return;
     if (!hasVideo && mode === "none") { setNotice("“不遮挡”没有可导出的背景 · 请上传视频，或改用切黑场 / 切白场生成纯色卡"); return; }
-    if (!("MediaRecorder" in window) || !("captureStream" in HTMLCanvasElement.prototype)) { setNotice("请使用最新版 Chrome、Edge 或 Safari 进行本地视频生成"); return; }
     cancelExportRef.current = false;
-    setIsRecording(true); setRenderProgress(0); setNotice(hasVideo ? "正在生成 视频 + 多段乱码字幕…" : "正在生成 纯色卡 + 多段乱码字幕…");
+    setIsRecording(true); setRenderProgress(0);
+
+    const clipLen = Math.max(0.1, trimEnd - trimStart);
+    const capped = clipLen > GIF_MAX_SECONDS;
+    const exportLen = Math.min(clipLen, GIF_MAX_SECONDS);
+    const exportEnd = trimStart + exportLen;
+    setNotice(capped ? `体验版限 ${GIF_MAX_SECONDS} 秒 · 正在导出 GIF(仅前 ${GIF_MAX_SECONDS} 秒)…` : "正在导出 GIF…");
+
     const previousTime = video?.currentTime ?? 0;
-    /* Always 16:9 — the preview stage is 16:9 and cover-crops the source, so the
-       export matches it exactly (same frame, same fontScale% of height). */
     const canvas = document.createElement("canvas");
-    canvas.width = 1280; canvas.height = 720;
-    const ctx = canvas.getContext("2d"); if (!ctx) { setIsRecording(false); return; }
+    canvas.width = GIF_WIDTH; canvas.height = GIF_HEIGHT;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) { setIsRecording(false); return; }
+
     try {
-    const stream = canvas.captureStream(30);
-    /* Only a real video contributes audio. The colour-card export is video-only:
-       a silent, source-less audio track stalls the MP4 audio encoder and can
-       strand onstop / the download, so with no video we record no audio at all. */
-    let mix: MediaStreamAudioDestinationNode | null = null;
-    if (video && videoUrl) {
-      try {
-        const audioCtx = audioCtxRef.current ?? new AudioContext();
-        audioCtxRef.current = audioCtx;
-        if (audioCtx.state === "suspended") await audioCtx.resume();
-        mix = audioCtx.createMediaStreamDestination();
-        if (!videoTapRef.current) {
-          videoTapRef.current = audioCtx.createMediaElementSource(video);
-          videoTapRef.current.connect(audioCtx.destination);
-        }
-        videoTapRef.current.connect(mix);
-        mix.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
-      } catch {
-        /* createMediaElementSource can only run once per element and throws if the
-           clip was already captured (e.g. after a remove + re-upload). Never let
-           that fail the whole export — fall back to recording video without its
-           own soundtrack. */
-        mix = null;
-      }
-    }
-    const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find(MediaRecorder.isTypeSupported);
-    const extension = mime && mime.includes("mp4") ? "mp4" : "webm";
-    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
-    const chunks: BlobPart[] = []; recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-    const finished = new Promise<void>((resolve) => { recorder.onstop = () => { if (!cancelExportRef.current) { const blob = new Blob(chunks, { type: recorder.mimeType || mime || "video/webm" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `ETHER_${fileName.replace(/\.[^.]+$/, "") || (hasVideo ? "video" : "card")}.${extension}`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(link.href), 2000); } resolve(); }; });
-    recorder.start(250);
-    if (video && videoUrl) {
-      await new Promise<void>((resolve) => { const done = () => resolve(); video.addEventListener("seeked", done, { once: true }); video.currentTime = trimStart; if (Math.abs(video.currentTime - trimStart) < .02) window.setTimeout(done, 60); });
-      video.muted = false;
-      await video.play().catch(() => {});
-      /* Hard deadline: a stalled clip must never trap the loop (and the button)
-         forever — cap at the trimmed length plus a few seconds of slack. */
-      const deadline = performance.now() + (trimEnd - trimStart) * 1000 + 4000;
-      while (video.currentTime < trimEnd - .035 && !video.ended && !cancelExportRef.current && performance.now() < deadline) {
-        drawCover(ctx, video, canvas.width, canvas.height); drawSubtitle(ctx, video.currentTime, canvas.width, canvas.height);
-        setRenderProgress((video.currentTime - trimStart) / totalDuration); await nextPaint();
-      }
-      video.pause();
-    } else {
-      /* No source video: paint a solid black (or white for 切白场) card each
-         frame and run the same subtitle state machine on a real-time clock. */
+      if (hasVideo && video) video.pause();
+      const gif = GIFEncoder();
+      const delay = Math.round(1000 / GIF_FPS);
+      const frameCount = Math.max(1, Math.round(exportLen * GIF_FPS));
       const base = mode === "flash" ? "#fff" : "#000";
-      let clock = trimStart, previous = performance.now();
-      while (clock < trimEnd - .01 && !cancelExportRef.current) {
-        const now = performance.now(); clock += (now - previous) / 1000; previous = now;
-        ctx.fillStyle = base; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        drawSubtitle(ctx, clock, canvas.width, canvas.height, true);
-        setRenderProgress((clock - trimStart) / totalDuration); setCurrentTime(Math.min(trimEnd, clock)); await nextPaint();
+
+      for (let i = 0; i < frameCount && !cancelExportRef.current; i++) {
+        const t = Math.min(exportEnd, trimStart + i / GIF_FPS);
+        if (hasVideo && video) {
+          await seekVideo(video, t);
+          drawCover(ctx, video, canvas.width, canvas.height);
+          drawSubtitle(ctx, t, canvas.width, canvas.height);
+        } else {
+          ctx.fillStyle = base; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          drawSubtitle(ctx, t, canvas.width, canvas.height, true);
+          setCurrentTime(t);
+        }
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const palette = quantize(data, 256);
+        const index = applyPalette(data, palette);
+        gif.writeFrame(index, canvas.width, canvas.height, { palette, delay });
+        setRenderProgress((i + 1) / frameCount);
+        await nextPaint();
       }
-    }
-    if (video && videoUrl && mix) videoTapRef.current?.disconnect(mix);
-    if (recorder.state !== "inactive") recorder.stop();
-    /* Don't wait forever on onstop — some browsers never fire it after an early
-       stop, which would otherwise strand the cleanup. */
-    await Promise.race([finished, new Promise<void>((resolve) => window.setTimeout(resolve, 2500))]);
-    stream.getTracks().forEach((track) => track.stop());
-    if (video && videoUrl) { video.currentTime = Math.min(trimEnd, Math.max(trimStart, previousTime)); setCurrentTime(video.currentTime); }
-    else setCurrentTime(trimStart);
-    const cancelled = cancelExportRef.current;
-    setRenderProgress(cancelled ? 0 : 1); setNotice(cancelled ? "已取消导出 · 未保存文件" : (hasVideo ? "生成完成：原音与全部 TEXT 事件已合成" : "生成完成：纯色卡与全部 TEXT 事件已合成"));
+
+      const cancelled = cancelExportRef.current;
+      if (!cancelled) {
+        gif.finish();
+        const blob = new Blob([gif.bytes()], { type: "image/gif" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `ETHER_${fileName.replace(/\.[^.]+$/, "") || (hasVideo ? "clip" : "card")}.gif`;
+        document.body.appendChild(link); link.click(); link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+      }
+      setRenderProgress(cancelled ? 0 : 1);
+      setNotice(cancelled ? "已取消导出 · 未保存文件" : `GIF 已导出(静音 · 限 ${GIF_MAX_SECONDS} 秒)。想要带原音的完整视频版 → ${FULL_VERSION_URL}`);
     } catch (error) {
       setNotice(`导出失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      /* Whatever happened — success, cancel, or error — leave recording mode so
-         the button returns to EXPORT instead of staying on CANCEL. */
+      if (hasVideo && video) { video.currentTime = Math.min(trimEnd, Math.max(trimStart, previousTime)); setCurrentTime(video.currentTime); }
+      else setCurrentTime(trimStart);
+      /* Whatever happened — success, cancel, or error — leave export mode so the
+         button returns to EXPORT instead of staying on CANCEL. */
       setIsPlaying(false); setIsRecording(false);
     }
   };
@@ -460,7 +452,7 @@ export default function Home() {
         <label className="check-line audio-toggle"><input type="checkbox" disabled={!selectedText} checked={selectedText?.apple ?? false} onChange={(event) => updateText({ apple: event.target.checked })} /> APPLE MOJIBAKE <span>{selectedText?.apple ? "苹果乱码 · 随机一个  字节" : "STRICT · 仅真实 0xF0"}</span></label>
         <Control label="乱码速度" value={selectedText?.speed ?? 1} suffix="×" min={.25} max={5} step={.05} disabled={!selectedText} onChange={(value) => updateText({ speed: value })} /><Control label="字幕字号" value={fontScale} suffix=" %H" min={1.5} max={16} step={.05} onChange={setFontScale} />
         <div className="field-label">乱码期间画面</div><div className="transition-grid">{([['black','01','切黑场'],['flash','02','切白场'],['none','03','不遮挡']] as const).map(([value, number, label]) => <button key={value} className={mode === value ? "active" : ""} onClick={() => selectMode(value)}><b>{number}</b> {label}</button>)}</div>
-        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={preparing || (!isRecording && !videoUrl && mode === "none")} onClick={isRecording ? cancelExport : exportVideo}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : `EXPORT ${canMp4 ? "MP4" : "WEBM"}`}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button></div><div className="notice" aria-live="polite">&gt; {notice}</div>
+        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={preparing || (!isRecording && !videoUrl && mode === "none")} onClick={isRecording ? cancelExport : exportGif}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : "EXPORT GIF"}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button><p className="upsell">体验版导出 {GIF_MAX_SECONDS} 秒静音 GIF · 带原音的完整视频版前往 <a href={`https://${FULL_VERSION_URL}`} target="_blank" rel="noreferrer">{FULL_VERSION_URL}</a></p></div><div className="notice" aria-live="polite">&gt; {notice}</div>
       </aside>
     </section>
     <footer><span>ETHER / 2026</span></footer>
