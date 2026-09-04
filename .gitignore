@@ -85,3 +85,6 @@ dist/
 
 # Cloudflare
 .wrangler/git add .
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+*.tsbuildinfo
