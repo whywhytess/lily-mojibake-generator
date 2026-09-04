@@ -1,6 +1,6 @@
 # Lily Mojibake Studio (demo)
 
-##deploy on lily.whywhyte55.com
+## deployed on lily.whywhyte55.com
 
 A browser-based **mojibake (文字化け / garbled-text) subtitle video editor**, inspired
 by the open, borderless web space around Shunji Iwai's film
