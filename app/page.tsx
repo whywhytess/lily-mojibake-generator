@@ -81,6 +81,7 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [notice, setNotice] = useState("SELECT SOURCE 上传视频后即可开始剪辑");
+  const [showUpsell, setShowUpsell] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [prepareProgress, setPrepareProgress] = useState(0);
 
@@ -225,6 +226,13 @@ export default function Home() {
 
   useEffect(() => () => { if (videoUrl.startsWith("blob:")) URL.revokeObjectURL(videoUrl); }, [videoUrl]);
   useEffect(() => () => prepareAbortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!showUpsell) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setShowUpsell(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showUpsell]);
 
   /* Measure the real stage height so the preview subtitle is fontScale% of it —
      the same fraction the 720px export canvas uses. Container-query units proved
@@ -397,9 +405,10 @@ export default function Home() {
         link.download = `ETHER_${fileName.replace(/\.[^.]+$/, "") || (hasVideo ? "clip" : "card")}.gif`;
         document.body.appendChild(link); link.click(); link.remove();
         window.setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+        setShowUpsell(true);
       }
       setRenderProgress(cancelled ? 0 : 1);
-      setNotice(cancelled ? "已取消导出 · 未保存文件" : `GIF 已导出(静音 · 限 ${GIF_MAX_SECONDS} 秒)。想要带原音的完整视频版 → ${FULL_VERSION_URL}`);
+      setNotice(cancelled ? "已取消导出 · 未保存文件" : `GIF 已导出(限 ${GIF_MAX_SECONDS} 秒)`);
     } catch (error) {
       setNotice(`导出失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -452,10 +461,20 @@ export default function Home() {
         <label className="check-line audio-toggle"><input type="checkbox" disabled={!selectedText} checked={selectedText?.apple ?? false} onChange={(event) => updateText({ apple: event.target.checked })} /> APPLE MOJIBAKE <span>{selectedText?.apple ? "苹果乱码 · 随机一个  字节" : "STRICT · 仅真实 0xF0"}</span></label>
         <Control label="乱码速度" value={selectedText?.speed ?? 1} suffix="×" min={.25} max={5} step={.05} disabled={!selectedText} onChange={(value) => updateText({ speed: value })} /><Control label="字幕字号" value={fontScale} suffix=" %H" min={1.5} max={16} step={.05} onChange={setFontScale} />
         <div className="field-label">乱码期间画面</div><div className="transition-grid">{([['black','01','切黑场'],['flash','02','切白场'],['none','03','不遮挡']] as const).map(([value, number, label]) => <button key={value} className={mode === value ? "active" : ""} onClick={() => selectMode(value)}><b>{number}</b> {label}</button>)}</div>
-        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={preparing || (!isRecording && !videoUrl && mode === "none")} onClick={isRecording ? cancelExport : exportGif}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : "EXPORT GIF"}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button><p className="upsell">体验版导出 {GIF_MAX_SECONDS} 秒静音 GIF · 带原音的完整视频版前往 <a href={`https://${FULL_VERSION_URL}`} target="_blank" rel="noreferrer">{FULL_VERSION_URL}</a></p></div><div className="notice" aria-live="polite">&gt; {notice}</div>
+        <div id="export"><div className="field-label">EXPORT</div><button className="render-button" disabled={preparing || (!isRecording && !videoUrl && mode === "none")} onClick={isRecording ? cancelExport : exportGif}><span>{isRecording ? `CANCEL · RENDERING ${Math.round(renderProgress * 100)}%` : "EXPORT GIF"}</span><span>{isRecording ? "✕" : "↗"}</span>{isRecording && <i style={{ width: `${renderProgress * 100}%` }} />}</button></div><div className="notice" aria-live="polite">&gt; {notice}</div>
       </aside>
     </section>
     <footer><span>ETHER / 2026</span></footer>
+    {showUpsell && <div className="upsell-backdrop">
+      <div className="upsell-modal" role="dialog" aria-modal="true" aria-label="体验版提示">
+        <button className="upsell-x" aria-label="关闭" onClick={() => setShowUpsell(false)}>✕</button>
+        <div className="upsell-kicker">体验版 / TRIAL</div>
+        <p className="upsell-lead">已导出 {GIF_MAX_SECONDS} 秒 GIF。</p>
+        <p className="upsell-text">想要<b>带原音的完整视频版</b>(不限时长)?前往完整版继续制作。</p>
+        <a className="upsell-cta" href={`https://${FULL_VERSION_URL}`} target="_blank" rel="noreferrer">前往 {FULL_VERSION_URL} ↗</a>
+        <button className="upsell-dismiss" onClick={() => setShowUpsell(false)}>继续体验</button>
+      </div>
+    </div>}
   </main>;
 }
 

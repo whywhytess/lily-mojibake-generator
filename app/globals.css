@@ -71,9 +71,19 @@ textarea:focus { border-color:var(--acid-dim); }
 .render-button:disabled { cursor:not-allowed; background:#2c3528; color:#778071; }
 .render-button i { position:absolute; left:0; bottom:0; height:3px; background:#fff; transition:width .15s; }
 .notice { min-height:30px; color:#78964b; font-size:8px; line-height:1.5; margin-top:9px; }
-.upsell { margin:8px 0 0; font-size:8px; line-height:1.6; letter-spacing:.04em; color:#5c6a4f; }
-.upsell a { color:var(--acid); text-decoration:none; border-bottom:1px solid var(--acid-dim); }
-.upsell a:hover { color:#d4ff7a; }
+.upsell-backdrop { position:fixed; inset:0; z-index:50; display:grid; place-items:center; padding:24px; background:rgba(4,6,4,.72); backdrop-filter:blur(2px); animation:upsell-fade .18s ease; }
+.upsell-modal { position:relative; width:min(92vw,360px); border:1px solid var(--line); background:var(--panel); padding:30px 28px 24px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.6); }
+.upsell-x { position:absolute; top:10px; right:12px; background:transparent; border:0; color:var(--muted); font-size:13px; cursor:pointer; }
+.upsell-x:hover { color:var(--paper); }
+.upsell-kicker { color:var(--acid); font-size:9px; letter-spacing:.24em; font-weight:800; }
+.upsell-lead { margin:16px 0 8px; color:var(--paper); font-size:15px; letter-spacing:.02em; }
+.upsell-text { margin:0 0 20px; color:var(--muted); font-size:11px; line-height:1.7; }
+.upsell-text b { color:var(--paper); font-weight:700; }
+.upsell-cta { display:block; background:var(--acid); color:var(--ink); font-size:11px; font-weight:800; letter-spacing:.1em; padding:12px; text-decoration:none; }
+.upsell-cta:hover { background:#d4ff7a; }
+.upsell-dismiss { margin-top:12px; background:transparent; border:0; color:var(--muted); font-size:9px; letter-spacing:.12em; cursor:pointer; }
+.upsell-dismiss:hover { color:var(--paper); }
+@keyframes upsell-fade { from { opacity:0; } to { opacity:1; } }
 .timeline-panel { max-width:1540px; margin:25px auto 0; border-top:1px solid var(--line); padding-top:17px; }
 .timeline-ruler { display:flex; justify-content:space-between; color:#4d584d; font-size:7px; padding:0 4px 5px 88px; }
 .timeline-track { height:62px; margin-left:80px; border-left:1px solid var(--line); position:relative; background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),#1c241c calc(25% - 1px) 25%); }
